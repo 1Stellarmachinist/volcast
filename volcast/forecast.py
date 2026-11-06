@@ -82,35 +82,132 @@ def drift_forecast(
     return out
 
 
+_PIPELINE_CACHE: dict[tuple[str, str], object] = {}
+
+
+def _load_pipeline(model_id: str, device: str):
+    """Load (and memoise) a Chronos-2 pipeline.
+
+    Building the pipeline from_pretrained takes seconds and ~500MB of weights. A
+    backtest re-forecasts at every rebalance (~26 times over 126 days), so without
+    this cache the model would be reloaded from disk 26 times per run -- and the
+    GPU would sit idle while the disk did all the work.
+    """
+    key = (model_id, device)
+    if key not in _PIPELINE_CACHE:
+        from chronos import Chronos2Pipeline  # type: ignore
+
+        _PIPELINE_CACHE[key] = Chronos2Pipeline.from_pretrained(model_id, device_map=device)
+    return _PIPELINE_CACHE[key]
+
+
+def clear_pipeline_cache() -> None:
+    _PIPELINE_CACHE.clear()
+
+
+def _pick_device() -> str:
+    """Prefer CUDA when it is actually present."""
+    try:
+        import torch
+
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:  # pragma: no cover - torch is optional
+        return "cpu"
+
+
 def chronos_forecast(
     prices: pd.DataFrame,
     horizon: int = 5,
     context_len: int = 256,
     model_id: str = "amazon/chronos-2",
+    device_map: str | None = None,
+    batch_size: int = 16,
 ) -> list[Forecast]:
-    """Chronos-2 engine. Lazy import; raises a clear error if not installed."""
+    """Chronos-2 engine (zero-shot).
+
+    The model is *fed log-returns*, not prices. Chronos-2's quantile spread is then
+    already in return units, so the implied sigma needs no price-scale conversion.
+    For a Gaussian, q90 - q10 == 2 * 1.2816 * sigma, which gives a calibration-free
+    volatility estimate straight from the model's own predictive distribution.
+
+    API note: Chronos-2 exposes ``Chronos2Pipeline.predict_df(...)``. The older
+    ``predict_quantiles(context=...)`` signature belonged to Chronos/T5 v1 and does
+    NOT exist in 2.x.
+    """
     try:
-        from chronos import Chronos2Pipeline  # type: ignore
+        # Availability probe only; _load_pipeline performs the real import.
+        from chronos import Chronos2Pipeline  # type: ignore  # noqa: F401
     except Exception as exc:  # pragma: no cover - optional dependency
         raise RuntimeError(
             "chronos engine requested but chronos-forecasting is not installed. "
-            "Install the 'chronos' extra (pulls torch) and ensure a GPU; on this "
-            "machine use engine='drift'."
+            "Install the 'chronos' extra (pip install -e '.[chronos]') on a machine "
+            "with a GPU; on a 2-core CPU box use engine='drift'."
         ) from exc
 
-    pipe = Chronos2Pipeline.from_pretrained(model_id)  # pragma: no cover
-    out: list[Forecast] = []  # pragma: no cover
-    for t in prices.columns:  # pragma: no cover
-        ctx = prices[t].dropna().iloc[-context_len:]
-        res = pipe.predict_quantiles(
-            context=ctx.to_numpy(dtype=float),
-            prediction_length=horizon,
-            quantile_levels=[0.1, 0.5, 0.9],
+    device = device_map or _pick_device()
+    pipeline = _load_pipeline(model_id, device)
+
+    h = max(int(horizon), 1)
+    rets = np.log(prices).diff()
+
+    # Long format: one row per (ticker, timestamp), which is what predict_df wants.
+    frames = []
+    for ticker in prices.columns:
+        s = rets[ticker].dropna().iloc[-int(context_len):]
+        if len(s) < 8:
+            continue
+        frames.append(
+            pd.DataFrame(
+                {
+                    "id": ticker,
+                    "timestamp": s.index,
+                    "target": s.to_numpy(dtype=float),
+                }
+            )
         )
-        lo, mid, hi = (np.asarray(r, dtype=float) for r in res[0])
-        sigma = safe_sigma(float(np.std([lo[-1], mid[-1], hi[-1]])) / 2.563)
-        out.append(Forecast(t, sigma, safe_sigma(sigma * math.sqrt(horizon)),
-                            float(mid[-1]), "chronos", horizon))
+
+    if not frames:
+        return [
+            Forecast(t, safe_sigma(np.nan), safe_sigma(np.nan), 0.0, "chronos", h)
+            for t in prices.columns
+        ]
+
+    context_df = pd.concat(frames, ignore_index=True)
+
+    pred_df = pipeline.predict_df(
+        context_df,
+        prediction_length=h,
+        quantile_levels=[0.1, 0.5, 0.9],
+        id_column="id",
+        timestamp_column="timestamp",
+        target="target",
+        batch_size=batch_size,
+    )
+
+    # predict_df returns one row per (id, step) with columns "0.1", "0.5", "0.9".
+    q10, q50, q90 = "0.1", "0.5", "0.9"
+    out: list[Forecast] = []
+
+    for ticker in prices.columns:
+        sub = pred_df[pred_df["id"] == ticker] if "id" in pred_df.columns else pred_df
+        if len(sub) == 0 or not {q10, q50, q90}.issubset(sub.columns):
+            out.append(
+                Forecast(ticker, safe_sigma(np.nan), safe_sigma(np.nan), 0.0, "chronos", h)
+            )
+            continue
+
+        spread = (sub[q90].to_numpy(dtype=float) - sub[q10].to_numpy(dtype=float)) / (
+            2.0 * 1.2815515655446004
+        )
+        # Per-step sigma; combine to the horizon by summing variances.
+        sigma_h = safe_sigma(float(np.sqrt(np.nansum(spread**2))))
+        sigma_1 = safe_sigma(float(np.nanmean(spread)))
+        mu = float(np.nansum(sub[q50].to_numpy(dtype=float)))
+        if not math.isfinite(mu):
+            mu = 0.0
+
+        out.append(Forecast(ticker, sigma_1, sigma_h, mu, "chronos", h))
+
     return out
 
 
@@ -121,6 +218,7 @@ def forecast_panel(
     engine: str = "drift",
     prices: pd.DataFrame | None = None,
     context_len: int = 256,
+    device_map: str | None = None,
 ) -> pd.DataFrame:
     """Return a tidy forecast table (one row per ticker)."""
     eng = (engine or "drift").lower()
@@ -130,7 +228,9 @@ def forecast_panel(
     elif eng == "chronos":
         if prices is None:
             raise ValueError("chronos engine needs a price panel")
-        fc = chronos_forecast(prices, horizon=horizon, context_len=context_len)
+        fc = chronos_forecast(
+            prices, horizon=horizon, context_len=context_len, device_map=device_map
+        )
     else:
         raise ValueError(f"unknown engine: {engine!r} (expected 'drift' or 'chronos')")
 
