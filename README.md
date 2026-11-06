@@ -67,7 +67,68 @@ web/                Vite + React + PWA client (passkey auth, forecast table)
 configs/lowspec.toml  tuned for 2 cores / 8 GB / no GPU
 ```
 
+## Ranking small caps (`volcast pick`)
+
+`volcast pick` ranks a universe on the things historically *associated* with
+small-cap outperformance, and then tells you whether that ranking has ever worked.
+
+```powershell
+.venv\Scripts\python -m volcast pick -c configs/penny.toml --evaluate
+```
+
+### Two kinds of signal, deliberately kept apart
+
+| Kind | Source | Backtestable? |
+|---|---|---|
+| Price/volume (momentum, vol regime, distance from 52w low) | computed at each date | **Yes** — point-in-time safe |
+| Fundamentals (revenue growth, margins, cash/debt, short %) | yfinance `.info` = **today's snapshot** | **No** |
+
+`volcast/ranking.py` never imports the fundamentals module. A test enforces this.
+Scoring historical dates with today's revenue growth would leak the future into
+the past and manufacture an edge that does not exist — the single easiest way for
+a backtest to lie.
+
+### What the evaluation actually says
+
+Run on 9 sub-$5 names over 2 years, 60 rebalances, 5-day horizon:
+
+```
+in_sample   n=30  excess=+0.491%  SE=1.134%  t=+0.43  beat-universe=50%
+out_sample  n=30  excess=+0.933%  SE=0.880%  t=+1.06  beat-universe=50%
+all         n=60  excess=+0.712%  SE=0.712%  t=+1.00  beat-universe=50%
+```
+
+The score is **monotonic** across buckets — top third −0.77%, middle −1.43%,
+bottom −2.23% — which is mildly encouraging and consistent with momentum working
+in small caps. But **t = 1.00** and a **50% hit rate** mean the ranking is not
+statistically distinguishable from noise at this sample size. It is a shortlist,
+not an oracle.
+
+Note also that all three buckets are negative: over this window the universe fell
+overall, and the ranking merely lost less. Beating a falling market is not the
+same as making money.
+
+### Hard limits you should know
+
+- **Survivorship.** Only names that still exist can be tested. `MULN`, `GOEV`,
+  `FFIE` and `RIVM` were already delisted (404) when the universe was built.
+  Real portfolios would have held some of those.
+- **Liquidity.** The screen requires ≥ $500k average daily dollar volume and
+  price ≥ $0.30. Below that you cannot get filled without moving the price, and
+  the model's assumption of frictionless trading breaks.
+- **Costs dominate.** See the cost-sensitivity table in the penny profile: a
+  Sharpe of 3.2 at 25bps becomes 1.3 at 250bps and −0.6 at 500bps. Microcap
+  spreads are realistically 100–250bps round trip.
+
+### If you want to improve it
+
+The most promising untested idea is **cross-sectional** scoring across a much
+larger universe (hundreds of names) rather than ranking 9. Nine names is too few
+for a ranking to mean much — there is no cross-section to exploit. Getting a
+broader universe needs a data source beyond yfinance's free tier.
+
 ## Auth model
+
 
 Passkeys (WebAuthn) only — no passwords.
 

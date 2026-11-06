@@ -43,6 +43,15 @@ def build_parser() -> argparse.ArgumentParser:
     _args.add_common(c)
     c.set_defaults(func=_args.dispatch, handler="cs")
 
+    g = sub.add_parser("pick", help="rank small caps and say whether the ranking works")
+    _args.add_common(g)
+    g.add_argument("--top", type=int, default=None)
+    g.add_argument("--no-fundamentals", action="store_true",
+                   help="skip the current-snapshot fundamentals fetch")
+    g.add_argument("--evaluate", action="store_true",
+                   help="also measure whether the ranking predicted anything")
+    g.set_defaults(func=_args.dispatch, handler="growth")
+
     t = sub.add_parser("ft", help="Chronos-2 fine-tuning (GPU only)")
     _args.add_common(t)
     t.set_defaults(func=_args.dispatch, handler="ft")
@@ -57,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     from .commands import cs as cmd_cs
     from .commands import forecast as cmd_forecast
     from .commands import ft as cmd_ft
+    from .commands import growth as cmd_growth
     from .commands import screen as cmd_screen
     from .commands import strat as cmd_strat
 
@@ -65,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         "screen": cmd_screen.run,
         "strat": cmd_strat.run,
         "cs": cmd_cs.run,
+        "growth": cmd_growth.run,
         "ft": cmd_ft.run,
     }
     fn = handlers.get(args.handler)
