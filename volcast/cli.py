@@ -52,6 +52,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="also measure whether the ranking predicted anything")
     g.set_defaults(func=_args.dispatch, handler="growth")
 
+    sp = sub.add_parser("subpenny", help="volume/MA breakout scan for sub-$1 OTC names")
+    _args.add_common(sp)
+    sp.add_argument("--top", type=int, default=20)
+    sp.add_argument("--rvol", type=float, default=1.5, help="min relative volume")
+    sp.add_argument("--above-ma20", action="store_true", help="only names above MA20")
+    sp.set_defaults(func=_args.dispatch, handler="subpenny")
+
     a = sub.add_parser("alpaca", help="measure real spreads via Alpaca (needs API keys)")
     _args.add_common(a)
     a.add_argument("--top", type=int, default=None)
@@ -77,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     from .commands import growth as cmd_growth
     from .commands import screen as cmd_screen
     from .commands import strat as cmd_strat
+    from .commands import subpenny as cmd_subpenny
 
     handlers = {
         "forecast": cmd_forecast.run,
@@ -85,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
         "cs": cmd_cs.run,
         "growth": cmd_growth.run,
         "alpaca": cmd_alpaca.run,
+        "subpenny": cmd_subpenny.run,
         "ft": cmd_ft.run,
     }
     fn = handlers.get(args.handler)
