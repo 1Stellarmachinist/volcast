@@ -1,0 +1,28 @@
+# Penny / sub-$5 universe.
+#
+# These are NOT recommendations. They are names that (a) currently trade under $5
+# and (b) had a complete 2-year price history when this file was written, so the
+# pipeline can actually compute something. Microcaps delist constantly: when this
+# list was first tested, MULN, GOEV, FFIE and RIVM all returned 404 from Yahoo.
+#
+# Read README "On penny stocks" before drawing conclusions from the output
+# below. Volatility is DANGER, not expected growth. The relationship between the
+# two is ~0 in this data (mean rank IC +0.006).
+
+engine = "drift"
+horizon = 5
+vol_window = 20
+
+universe = ["SNDL", "NAK", "LCID", "PLUG", "AMC", "KOSS", "QS", "OPEN", "MVIS"]
+
+# Tighter risk limits than the large-cap profile, deliberately:
+#  - penny names gap 20-50% overnight, so a 25% position can lose 10% of the book
+#  - spreads are wide, so costs are modelled 5x higher than for liquid large caps
+target_vol = 0.30
+max_weight = 0.10
+cost_bps = 25.0
+lookback = 252
+test_days = 126
+rebalance = 5
+
+screen_top = 9
