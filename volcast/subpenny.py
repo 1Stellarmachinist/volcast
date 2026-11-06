@@ -87,7 +87,7 @@ def moving_average_state(prices: pd.DataFrame, short: int = 20,
                          long: int = 50) -> pd.DataFrame:
     """Per-ticker MA position, slope, and crossover state on the latest bar."""
     ma_s = prices.rolling(short, min_periods=max(5, short // 2)).mean()
-    ma_l = prices.rolling(long, min_periods=max(10, long // 2)).mean()
+    ma_l = prices.rolling(long, min_periods=max(10, long // 2)).mean()  # noqa: F841 -- used below via ma_l[t]
 
     last = prices.iloc[-1]
     rows = {}

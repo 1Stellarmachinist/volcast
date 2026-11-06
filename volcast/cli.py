@@ -59,6 +59,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--above-ma20", action="store_true", help="only names above MA20")
     sp.set_defaults(func=_args.dispatch, handler="subpenny")
 
+    cont = sub.add_parser("continuation", help="do sub-penny breakouts actually continue?")
+    _args.add_common(cont)
+    cont.add_argument("--rvol", type=float, default=3.0)
+    cont.add_argument("--min-events", type=int, default=20)
+    cont.set_defaults(func=_args.dispatch, handler="followthrough")
+
     a = sub.add_parser("alpaca", help="measure real spreads via Alpaca (needs API keys)")
     _args.add_common(a)
     a.add_argument("--top", type=int, default=None)
@@ -79,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from .commands import alpaca as cmd_alpaca
     from .commands import cs as cmd_cs
+    from .commands import followthrough as cmd_followthrough
     from .commands import forecast as cmd_forecast
     from .commands import ft as cmd_ft
     from .commands import growth as cmd_growth
@@ -94,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         "growth": cmd_growth.run,
         "alpaca": cmd_alpaca.run,
         "subpenny": cmd_subpenny.run,
+        "followthrough": cmd_followthrough.run,
         "ft": cmd_ft.run,
     }
     fn = handlers.get(args.handler)
