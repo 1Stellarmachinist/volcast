@@ -52,6 +52,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="also measure whether the ranking predicted anything")
     g.set_defaults(func=_args.dispatch, handler="growth")
 
+    a = sub.add_parser("alpaca", help="measure real spreads via Alpaca (needs API keys)")
+    _args.add_common(a)
+    a.add_argument("--top", type=int, default=None)
+    a.add_argument("--days", type=int, default=60, help="days of daily bars to fetch")
+    a.add_argument("--universe", action="store_true", help="check symbols against Alpaca tradable list")
+    a.set_defaults(func=_args.dispatch, handler="alpaca")
+
     t = sub.add_parser("ft", help="Chronos-2 fine-tuning (GPU only)")
     _args.add_common(t)
     t.set_defaults(func=_args.dispatch, handler="ft")
@@ -63,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    from .commands import alpaca as cmd_alpaca
     from .commands import cs as cmd_cs
     from .commands import forecast as cmd_forecast
     from .commands import ft as cmd_ft
@@ -76,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         "strat": cmd_strat.run,
         "cs": cmd_cs.run,
         "growth": cmd_growth.run,
+        "alpaca": cmd_alpaca.run,
         "ft": cmd_ft.run,
     }
     fn = handlers.get(args.handler)
