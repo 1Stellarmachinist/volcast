@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Local data / artifacts
+.volcast/
+*.sqlite3
+*.db
+*.log
+*.out
+*.err
+artifacts/
+reports/
+
+# Ad-hoc screenshots / scratch captures
+*.png
+dash*.png
+shot*.png
+probe*.png
+
+# Local environment overrides (may hold JWT secrets)
+.env
+.env.*
+!.env.example
+
+# Web
+web/node_modules/
+web/dist/
+web/.vite/
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/

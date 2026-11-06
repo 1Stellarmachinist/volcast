@@ -1,0 +1,19 @@
+# Low-spec profile: tuned for a 2-core / 8 GB CPU-only machine (no GPU).
+# Engine is "drift" on purpose. Chronos-2 on 2 cores @1.8GHz is unusably slow.
+
+engine = "drift"
+horizon = 5
+vol_window = 20
+
+universe = ["SPY", "QQQ", "IWM", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA"]
+
+# Backtest
+target_vol = 0.15
+max_weight = 0.25
+cost_bps = 5.0
+lookback = 252          # trading days of history
+test_days = 126         # out-of-sample window kept short for speed
+rebalance = 5           # days between rebalances
+
+# Screening
+screen_top = 5

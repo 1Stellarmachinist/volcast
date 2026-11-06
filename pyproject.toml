@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "volcast"
+version = "0.1.0"
+description = "Short-horizon volatility forecasting and net-of-cost strategy research"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Daniel" }]
+keywords = ["volatility", "forecasting", "quant", "backtest"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "pandas>=2.0",
+  "numpy>=1.24",
+  "yfinance>=0.2.40",
+]
+
+[project.optional-dependencies]
+api = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "pyjwt>=2.8",
+  "cryptography>=42",
+  "webauthn>=2.2,<3",
+]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.4",
+  "httpx>=0.27",
+]
+# Deliberately NOT installed on low-spec CPU-only hardware.
+chronos = [
+  "torch>=2.2",
+  "chronos-forecasting>=2.0",
+]
+
+[project.scripts]
+volcast = "volcast.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["volcast*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501", "B008"]

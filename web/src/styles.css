@@ -1,0 +1,188 @@
+:root {
+  --bg: #0b0f14;
+  --panel: #121821;
+  --panel2: #0f151d;
+  --line: #1f2937;
+  --text: #e6edf3;
+  --muted: #8b98a5;
+  --accent: #4ade80;
+  --error: #f87171;
+  --good: #4ade80;
+  --bad: #fbbf24;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* Respect iPhone safe areas so nothing hides under the notch. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+main { max-width: 780px; margin: 0 auto; padding: 28px 18px 72px; }
+
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+
+.muted { color: var(--muted); margin: 0 0 18px; font-size: 13px; }
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0 14px; line-height: 1.5; }
+.error { color: var(--error); font-size: 13px; }
+.mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+.neg { color: var(--error); }
+.pos { color: var(--accent); }
+
+header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+/* ---- cards ------------------------------------------------------------- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 26px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card .k { font-size: 11px; color: var(--muted); text-transform: uppercase;
+           letter-spacing: 0.05em; }
+.card .v { font-size: 22px; font-weight: 650; letter-spacing: -0.02em;
+           font-variant-numeric: tabular-nums; }
+.card .sub { font-size: 11px; color: var(--muted); }
+
+/* ---- tables ------------------------------------------------------------ */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+th, td { text-align: right; padding: 9px 6px; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+th.sortable { cursor: pointer; }
+th.sortable:hover { color: var(--text); }
+
+td { font-variant-numeric: tabular-nums; }
+
+.barcol { width: 26%; }
+td.barcol { padding-right: 10px; }
+
+.bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), #22d3ee);
+  min-width: 2px;
+}
+
+/* ---- backtest ---------------------------------------------------------- */
+.bt { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 22px; }
+
+.bt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.verdict { font-size: 13px; padding: 10px 12px; border-radius: 8px; margin: 14px 0; }
+.verdict.bad { background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.3);
+               color: var(--bad); }
+.verdict.good { background: rgba(74, 222, 128, 0.08);
+                border: 1px solid rgba(74, 222, 128, 0.3); color: var(--good); }
+
+.equity { width: 100%; height: 120px; background: var(--panel2);
+          border: 1px solid var(--line); border-radius: 10px; margin-top: 4px; }
+
+.footer { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line); }
+
+/* ---- auth -------------------------------------------------------------- */
+form { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; }
+label { font-size: 12px; color: var(--muted); }
+
+input[type="text"] {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--text);
+  padding: 12px 13px;
+  font-size: 16px; /* 16px avoids iOS auto-zoom on focus */
+  width: 100%;
+}
+input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+button {
+  background: var(--accent);
+  border: 0;
+  border-radius: 9px;
+  color: #06140a;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 650;
+  padding: 12px 16px;
+  touch-action: manipulation;
+}
+button:disabled { opacity: 0.55; cursor: progress; }
+
+button.ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 500;
+  padding: 8px 13px;
+}
+
+button.link {
+  background: none;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: inherit;
+  font-weight: 600;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.switch { margin-top: 22px; font-size: 13px; color: var(--muted); }
+
+.secondary { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.secondary label { display: flex; gap: 9px; align-items: center; font-size: 13px;
+                   color: var(--text); }
+
+.auth { padding-top: 48px; max-width: 420px; }
+
+@media (max-width: 560px) {
+  main { padding: 20px 14px 60px; }
+  .cards { grid-template-columns: repeat(2, 1fr); }
+  .card .v { font-size: 19px; }
+  .barcol { display: none; }  /* bars are noise on a narrow phone */
+  th, td { padding: 8px 4px; font-size: 13px; }
+  .bt-head { flex-direction: column; align-items: stretch; }
+}
+
+button.ghost.wide { width: 100%; padding: 11px 16px; border-color: var(--accent); color: var(--accent); }
