@@ -118,6 +118,13 @@ export default function SignIn({ onAuthenticated }: Props) {
     setStatus('busy')
     setMessage(null)
     try {
+      // A conditional-mediation get() is almost certainly still pending from the
+      // autofill effect. WebAuthn allows only ONE outstanding request per page, so
+      // create() would fail with "A request is already pending". Cancel it first
+      // and give the abort a beat to unwind before starting a new ceremony.
+      abortRef.current?.abort()
+      await new Promise((r) => setTimeout(r, 60))
+
       const begin = await post<{
         challenge_id: string
         public_key: PublicKeyCredentialCreationOptionsJSON
@@ -156,6 +163,10 @@ export default function SignIn({ onAuthenticated }: Props) {
     setStatus('busy')
     setMessage(null)
     try {
+      // Same one-pending-request rule as createPasskey().
+      abortRef.current?.abort()
+      await new Promise((r) => setTimeout(r, 60))
+
       const body = username.trim() ? { username: username.trim() } : {}
       const begin = await post<{
         challenge_id: string
@@ -352,7 +363,7 @@ function describePasskeyError(err: unknown, op: 'create' | 'get'): string {
       : 'Cancelled. If you have never created a passkey here, use "Create account" below.'
   }
   if (name === 'SecurityError') {
-    return `This page's address (${origin}) is not a valid passkey domain. Passkeys need a real domain name such as http://localhost:8000 — an IP like 127.0.0.1 is rejected.`
+    return `This page's address (${origin}) is not a valid passkey domain. Passkeys need a real domain name such as http://localhost:8000 ï¿½ an IP like 127.0.0.1 is rejected.`
   }
   if (name === 'NotSupportedError') {
     return 'This browser or device does not support the required passkey type.'
