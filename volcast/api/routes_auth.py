@@ -49,7 +49,7 @@ def register_begin(
     if body.add_to_existing:
         claims = security.optional_access_claims(cfg, request)
         add_to = claims.get("sub") if claims else None
-    out = passkeys.begin_registration(cfg, conn, body.username, body.display_name, add_to)
+    out = passkeys.begin_registration(cfg, conn, body.username, body.display_name, add_to, request)
     return clean_payload(out)
 
 
@@ -57,12 +57,13 @@ def register_begin(
 def register_finish(
     body: RegisterFinishRequest,
     response: Response,
+    request: Request,
     cfg: Settings = Depends(get_settings),
     conn=Depends(db_conn),
 ):
     try:
         out = passkeys.finish_registration(
-            cfg, conn, body.challenge_id, body.credential, body.label
+            cfg, conn, body.challenge_id, body.credential, body.label, request
         )
     except passkeys.PasskeyError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
@@ -83,11 +84,12 @@ def register_finish(
 @router.post("/login/begin", response_model=LoginBeginResponse)
 def login_begin(
     body: LoginBeginRequest,
+    request: Request,
     cfg: Settings = Depends(get_settings),
     conn=Depends(db_conn),
 ):
     try:
-        out = passkeys.begin_authentication(cfg, conn, body.username)
+        out = passkeys.begin_authentication(cfg, conn, body.username, request)
     except passkeys.PasskeyError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     return clean_payload(out)
@@ -97,11 +99,12 @@ def login_begin(
 def login_finish(
     body: LoginFinishRequest,
     response: Response,
+    request: Request,
     cfg: Settings = Depends(get_settings),
     conn=Depends(db_conn),
 ):
     try:
-        out = passkeys.finish_authentication(cfg, conn, body.challenge_id, body.credential)
+        out = passkeys.finish_authentication(cfg, conn, body.challenge_id, body.credential, request)
     except passkeys.PasskeyError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
 

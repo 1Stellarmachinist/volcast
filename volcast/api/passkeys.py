@@ -40,6 +40,41 @@ def b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
+def resolve_rp(cfg: Settings, request=None) -> tuple[str, str, list[str]]:
+    """Return (rp_id, rp_name, allowed_origins) that match the actual request.
+
+    WebAuthn requires ``rp.id`` to be a registrable suffix of the page's origin.
+    Serving the app at http://127.0.0.1:8000 while advertising ``rp.id=localhost``
+    makes the browser raise SecurityError on create(), which the UI shows as
+    "create account is not working" with no useful detail. So unless an explicit
+    non-default rp_id is configured, derive it from the incoming Host header and
+    always allow that origin.
+    """
+    rp_id = (cfg.rp_id or "").strip()
+    origins = list(cfg.origins)
+
+    host = ""
+    scheme = "http"
+    if request is not None:
+        try:
+            host = (request.headers.get("host") or "").split(":")[0].strip()
+            scheme = request.url.scheme or "http"
+        except Exception:
+            host = ""
+        if host:
+            origin = f"{scheme}://{request.headers.get('host')}"
+            if origin not in origins:
+                origins.append(origin)
+
+    # Default config values are placeholders; trust the request instead.
+    if host and rp_id in ("", "localhost"):
+        rp_id = host
+    if not rp_id:
+        rp_id = "localhost"
+
+    return rp_id, cfg.rp_name, origins
+
+
 def _as_str(value: Any, default: str) -> str:
     """Enum or str -> plain str ("required", "none", ...)."""
     if value is None:
@@ -90,7 +125,8 @@ def pop_challenge(conn, cid: str, kind: str) -> dict:
 # Registration
 # --------------------------------------------------------------------------- #
 def begin_registration(cfg: Settings, conn, username: str | None,
-                       display_name: str | None, add_to_existing: str | None) -> dict:
+                       display_name: str | None, add_to_existing: str | None,
+                       request=None) -> dict:
     """Build PublicKeyCredentialCreationOptions.
 
     ``add_to_existing`` is the id of an already-authenticated user; when present we
@@ -135,6 +171,8 @@ def begin_registration(cfg: Settings, conn, username: str | None,
             (user_id, uname, dname, dbmod.now()),
         )
 
+    rp_id, rp_name, _origins = resolve_rp(cfg, request)
+
     challenge = _new_challenge()
 
     exclude = [
@@ -145,8 +183,8 @@ def begin_registration(cfg: Settings, conn, username: str | None,
     ]
 
     kwargs: dict[str, Any] = {
-        "rp_id": cfg.rp_id,
-        "rp_name": cfg.rp_name,
+        "rp_id": rp_id,
+        "rp_name": rp_name,
         "user_id": user_id.encode("utf-8"),
         "user_name": uname,
         "user_display_name": dname,
@@ -177,7 +215,7 @@ def begin_registration(cfg: Settings, conn, username: str | None,
     # silently falling back to a non-resident, uv=preferred credential).
     public_key: dict[str, Any] = {
         "challenge": bytes_to_base64url(challenge),
-        "rp": {"id": cfg.rp_id, "name": cfg.rp_name},
+        "rp": {"id": rp_id, "name": rp_name},
         "user": {
             "id": bytes_to_base64url(user_id.encode("utf-8")),
             "name": uname,
@@ -216,7 +254,8 @@ def begin_registration(cfg: Settings, conn, username: str | None,
 
 
 def finish_registration(cfg: Settings, conn, challenge_id: str,
-                        credential: dict, label: str | None) -> dict:
+                        credential: dict, label: str | None,
+                        request=None) -> dict:
     state = pop_challenge(conn, challenge_id, "register")
     expected = state["challenge"]
 
@@ -224,8 +263,8 @@ def finish_registration(cfg: Settings, conn, challenge_id: str,
         verification = webauthn.verify_registration_response(
             credential=credential,
             expected_challenge=base64url_to_bytes(expected),
-            expected_rp_id=cfg.rp_id,
-            expected_origin=cfg.origins,
+            expected_rp_id=resolve_rp(cfg, request)[0],
+            expected_origin=resolve_rp(cfg, request)[2],
             require_user_verification=True,
         )
     except Exception as exc:
@@ -272,7 +311,7 @@ def finish_registration(cfg: Settings, conn, challenge_id: str,
 # --------------------------------------------------------------------------- #
 # Authentication (usernameless by default)
 # --------------------------------------------------------------------------- #
-def begin_authentication(cfg: Settings, conn, username: str | None) -> dict:
+def begin_authentication(cfg: Settings, conn, username: str | None, request=None) -> dict:
     """Build PublicKeyCredentialRequestOptions.
 
     Usernameless login sends ``allowCredentials = []`` so the authenticator
@@ -291,9 +330,11 @@ def begin_authentication(cfg: Settings, conn, username: str | None) -> dict:
             )
         ]
 
+    rp_id, _rp_name, _origins = resolve_rp(cfg, request)
+
     challenge = _new_challenge()
     options = webauthn.generate_authentication_options(
-        rp_id=cfg.rp_id,
+        rp_id=rp_id,
         challenge=challenge,
         allow_credentials=allow,
         user_verification=UserVerificationRequirement.REQUIRED,
@@ -302,7 +343,7 @@ def begin_authentication(cfg: Settings, conn, username: str | None) -> dict:
 
     public_key = {
         "challenge": bytes_to_base64url(challenge),
-        "rpId": cfg.rp_id,
+        "rpId": rp_id,
         "timeout": int(options.timeout or 120_000),
         "userVerification": "required",
         # Usernameless: an empty list lets the authenticator offer any
@@ -324,7 +365,8 @@ def begin_authentication(cfg: Settings, conn, username: str | None) -> dict:
     return {"challenge_id": cid, "public_key": public_key}
 
 
-def finish_authentication(cfg: Settings, conn, challenge_id: str, credential: dict) -> dict:
+def finish_authentication(cfg: Settings, conn, challenge_id: str, credential: dict,
+                          request=None) -> dict:
     state = pop_challenge(conn, challenge_id, "authenticate")
     expected = state["challenge"]
 
@@ -341,8 +383,8 @@ def finish_authentication(cfg: Settings, conn, challenge_id: str, credential: di
         verification = webauthn.verify_authentication_response(
             credential=credential,
             expected_challenge=base64url_to_bytes(expected),
-            expected_rp_id=cfg.rp_id,
-            expected_origin=cfg.origins,
+            expected_rp_id=resolve_rp(cfg, request)[0],
+            expected_origin=resolve_rp(cfg, request)[2],
             credential_public_key=row["public_key"],
             credential_current_sign_count=int(row["sign_count"] or 0),
             require_user_verification=True,
