@@ -95,10 +95,18 @@ class _FakeReq:
         self.url = _FakeURL()
 
 
-def test_resolve_rp_uses_request_host_when_config_is_placeholder():
+def test_resolve_rp_maps_loopback_ip_to_localhost():
+    """IP literals are not valid rp.id values; loopback must become 'localhost'."""
     rp_id, _, origins = passkeys.resolve_rp(_cfg(), _FakeReq("127.0.0.1:8000"))
-    assert rp_id == "127.0.0.1", "rp.id must match the page origin or WebAuthn refuses"
-    assert "http://127.0.0.1:8000" in origins
+    assert rp_id == "localhost", "an IP rp.id is rejected by browsers as an invalid domain"
+    # The origin that is actually allowed must be the localhost one, because that
+    # is the address the user is told to open.
+    assert "http://localhost:8000" in origins
+
+
+def test_resolve_rp_keeps_real_domain():
+    rp_id, _, _ = passkeys.resolve_rp(_cfg(), _FakeReq("volcast.example.com"))
+    assert rp_id == "volcast.example.com"
 
 
 def test_resolve_rp_keeps_explicit_non_placeholder_config():
@@ -112,11 +120,13 @@ def test_resolve_rp_without_request_falls_back():
     assert rp_id == "localhost"
 
 
-def test_register_options_rp_matches_request_host(conn):
+def test_register_options_rp_is_never_an_ip(conn):
     out = passkeys.begin_registration(
         _cfg(), conn, "hostcheck", None, None, _FakeReq("127.0.0.1:8000")
     )
-    assert out["public_key"]["rp"]["id"] == "127.0.0.1"
+    rp_id = out["public_key"]["rp"]["id"]
+    assert rp_id == "localhost"
+    assert not rp_id.replace(".", "").isdigit(), "rp.id must be a domain, not an IP"
 
 
 # --------------------------------------------------------------------------- #

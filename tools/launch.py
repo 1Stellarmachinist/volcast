@@ -119,8 +119,8 @@ def print_banner(cfg, app_cfg, port: int) -> None:
     print(f"  universe      : {len(cfg.universe)} tickers")
     print(f"  env           : {app_cfg.env}")
     print(f"  secure cookies: {app_cfg.secure_cookies}")
-    print(f"  url           : http://127.0.0.1:{port}")
-    print(f"  docs          : http://127.0.0.1:{port}/docs")
+    print(f"  url           : http://localhost:{port}   <- use this for passkeys")
+    print(f"  docs          : http://localhost:{port}/docs")
     print("=" * 66)
 
 
@@ -173,7 +173,7 @@ def main() -> int:
         def _open() -> None:
             time.sleep(2.0)
             try:
-                webbrowser.open(f"http://127.0.0.1:{port}/")
+                webbrowser.open(f"http://localhost:{port}/")
             except Exception:
                 pass
 

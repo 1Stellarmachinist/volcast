@@ -41,36 +41,41 @@ def b64url(data: bytes) -> str:
 
 
 def resolve_rp(cfg: Settings, request=None) -> tuple[str, str, list[str]]:
-    """Return (rp_id, rp_name, allowed_origins) that match the actual request.
+    """Return (rp_id, rp_name, allowed_origins) that the browser will accept.
 
-    WebAuthn requires ``rp.id`` to be a registrable suffix of the page's origin.
-    Serving the app at http://127.0.0.1:8000 while advertising ``rp.id=localhost``
-    makes the browser raise SecurityError on create(), which the UI shows as
-    "create account is not working" with no useful detail. So unless an explicit
-    non-default rp_id is configured, derive it from the incoming Host header and
-    always allow that origin.
+    WebAuthn requires ``rp.id`` to be a DOMAIN NAME that is a registrable suffix
+    of the page origin. IP literals are NOT valid: a page at http://127.0.0.1:8000
+    with ``rp.id=127.0.0.1`` fails with "invalid domain", and with
+    ``rp.id=localhost`` it fails a same-origin check. The only combination that
+    works locally is page and rp.id both being ``localhost``.
+
+    Therefore loopback IPs are normalised to ``localhost`` here, and the caller
+    should serve the UI on http://localhost:<port>.
     """
     rp_id = (cfg.rp_id or "").strip()
     origins = list(cfg.origins)
 
     host = ""
+    port = ""
     scheme = "http"
     if request is not None:
         try:
-            host = (request.headers.get("host") or "").split(":")[0].strip()
+            raw_host = request.headers.get("host") or ""
+            host, _, port = raw_host.partition(":")
             scheme = request.url.scheme or "http"
         except Exception:
             host = ""
+        # Browsers treat loopback IPv4/IPv6 as "not a domain"; rewrite so both the
+        # advertised rp.id and the allowed origin use localhost consistently.
+        if host in ("127.0.0.1", "::1", "[::1]", "0.0.0.0"):
+            host = "localhost"
         if host:
-            origin = f"{scheme}://{request.headers.get('host')}"
+            origin = f"{scheme}://{host}" + (f":{port}" if port else "")
             if origin not in origins:
                 origins.append(origin)
 
-    # Default config values are placeholders; trust the request instead.
-    if host and rp_id in ("", "localhost"):
-        rp_id = host
-    if not rp_id:
-        rp_id = "localhost"
+    if rp_id in ("", "localhost") or rp_id in ("127.0.0.1", "::1"):
+        rp_id = host or "localhost"
 
     return rp_id, cfg.rp_name, origins
 

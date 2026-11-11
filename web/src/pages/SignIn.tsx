@@ -148,13 +148,7 @@ export default function SignIn({ onAuthenticated }: Props) {
       finishWithToken(done.access_token, done.display_name ?? null)
     } catch (err) {
       setStatus('error')
-      setMessage(
-        err instanceof ApiError
-          ? String(err.detail)
-          : (err as Error).name === 'NotAllowedError'
-            ? 'Cancelled, or your device does not support passkeys.'
-            : (err as Error).message,
-      )
+      setMessage(describePasskeyError(err, 'create'))
     }
   }
 
@@ -184,13 +178,7 @@ export default function SignIn({ onAuthenticated }: Props) {
       finishWithToken(done.access_token, done.display_name ?? null)
     } catch (err) {
       setStatus('error')
-      setMessage(
-        err instanceof ApiError
-          ? String(err.detail)
-          : (err as Error).name === 'NotAllowedError'
-            ? 'Cancelled. If you have not created a passkey yet, use "Create account" below.'
-            : (err as Error).message,
-      )
+      setMessage(describePasskeyError(err, 'get'))
     }
   }
 
@@ -343,4 +331,34 @@ function DemoButton({
       {err && <p className="error">{err}</p>}
     </section>
   )
+}
+
+/**
+ * Turn a WebAuthn failure into something actionable.
+ *
+ * The browser deliberately gives almost no detail for security reasons, so the
+ * useful signal is the error NAME. Mapping the few known cases here is the
+ * difference between "it just says invalid domain" and knowing what to change.
+ */
+function describePasskeyError(err: unknown, op: 'create' | 'get'): string {
+  if (err instanceof ApiError) return String(err.detail)
+  const name = (err as Error)?.name ?? ''
+  const msg = (err as Error)?.message ?? String(err)
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+
+  if (name === 'NotAllowedError') {
+    return op === 'create'
+      ? 'Cancelled, or this device/browser refused the passkey. Try again and approve the prompt.'
+      : 'Cancelled. If you have never created a passkey here, use "Create account" below.'
+  }
+  if (name === 'SecurityError') {
+    return `This page's address (${origin}) is not a valid passkey domain. Passkeys need a real domain name such as http://localhost:8000 — an IP like 127.0.0.1 is rejected.`
+  }
+  if (name === 'NotSupportedError') {
+    return 'This browser or device does not support the required passkey type.'
+  }
+  if (name === 'InvalidStateError') {
+    return 'A passkey for this account already exists on this device. Try signing in instead.'
+  }
+  return `${name || 'Error'}: ${msg}`
 }
