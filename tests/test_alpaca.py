@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 
 import numpy as np
 import pandas as pd
@@ -58,6 +59,14 @@ def test_naive_end_is_treated_as_utc():
 # Credentials
 # --------------------------------------------------------------------------- #
 def test_missing_credentials_raise_with_helpful_message(monkeypatch):
+    """With no env vars and no .env, Credentials.from_env() must fail loudly.
+
+    load_dotenv is stubbed out: otherwise it finds the developer's real .env and
+    the test would pass or fail depending on whose machine runs it.
+    """
+    import volcast.alpaca as alp
+
+    monkeypatch.setattr(alp, "load_dotenv", lambda *a, **k: 0)
     monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
     monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
     with pytest.raises(AlpacaError, match="not set"):
@@ -144,3 +153,76 @@ def test_suggest_cost_bps_dwarfs_large_cap_assumptions():
     penny = _quotes([400] * 30)
     cost = suggest_cost_bps({"PNY": penny})
     assert cost > 100.0
+
+
+# --------------------------------------------------------------------------- #
+# .env loading: the file used to be inert
+# --------------------------------------------------------------------------- #
+def test_dotenv_loader_reads_file(tmp_path, monkeypatch):
+    """Regression: .env was never read, so keys in it never reached the code."""
+    from volcast.alpaca import load_dotenv
+
+    p = tmp_path / ".env"
+    p.write_text("# comment\n\nALPACA_API_KEY_ID=PKTEST123\nALPACA_API_SECRET_KEY=secretvalue\n",
+                 encoding="utf-8")
+    monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
+    monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
+    assert load_dotenv(p, override=True) == 2
+    assert os.environ["ALPACA_API_KEY_ID"] == "PKTEST123"
+    assert os.environ["ALPACA_API_SECRET_KEY"] == "secretvalue"
+
+
+def test_dotenv_loader_strips_quotes(tmp_path, monkeypatch):
+    from volcast.alpaca import load_dotenv
+
+    p = tmp_path / ".env"
+    p.write_text('ALPACA_API_KEY_ID="PKQUOTED"\nALPACA_API_SECRET_KEY=''s3''\n', encoding="utf-8")
+    monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
+    monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
+    load_dotenv(p, override=True)
+    assert os.environ["ALPACA_API_KEY_ID"] == "PKQUOTED"
+    assert os.environ["ALPACA_API_SECRET_KEY"] == "s3"
+
+
+def test_dotenv_loader_tolerates_crlf_and_export(tmp_path, monkeypatch):
+    from volcast.alpaca import load_dotenv
+
+    p = tmp_path / ".env"
+    p.write_bytes(b"export ALPACA_API_KEY_ID=PKCRLF\r\nALPACA_API_SECRET_KEY=s\r\n")
+    monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
+    monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
+    load_dotenv(p, override=True)
+    assert os.environ["ALPACA_API_KEY_ID"] == "PKCRLF"
+
+
+def test_dotenv_loader_skips_comments_and_blanks(tmp_path):
+    from volcast.alpaca import load_dotenv
+
+    p = tmp_path / ".env"
+    p.write_text("# only comments\n\n   \n", encoding="utf-8")
+    assert load_dotenv(p, override=True) == 0
+
+
+def test_dotenv_loader_ignores_malformed_lines(tmp_path, monkeypatch):
+    from volcast.alpaca import load_dotenv
+
+    p = tmp_path / ".env"
+    p.write_text("NOT_A_PAIR\n=novalue\nALPACA_API_KEY_ID=PKOK\n", encoding="utf-8")
+    monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
+    load_dotenv(p, override=True)
+    assert os.environ["ALPACA_API_KEY_ID"] == "PKOK"
+
+
+def test_dotenv_loader_missing_file_is_not_an_error(tmp_path):
+    from volcast.alpaca import load_dotenv
+    assert load_dotenv(tmp_path / "nope.env") == 0
+
+
+def test_dotenv_does_not_override_by_default(tmp_path, monkeypatch):
+    from volcast.alpaca import load_dotenv
+
+    p = tmp_path / ".env"
+    p.write_text("ALPACA_API_KEY_ID=FROMFILE\n", encoding="utf-8")
+    monkeypatch.setenv("ALPACA_API_KEY_ID", "FROMENV")
+    load_dotenv(p, override=False)
+    assert os.environ["ALPACA_API_KEY_ID"] == "FROMENV"

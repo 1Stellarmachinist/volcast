@@ -205,3 +205,133 @@ def quotes_payload(tickers: list[str], period: str = "1mo") -> dict:
         chg = rets[t].iloc[-1] if len(rets) > 1 else float("nan")
         rows.append({"ticker": t, "last": float(last), "change_1d": float(chg)})
     return _clean({"as_of": prices.index[-1].isoformat(), "rows": rows})
+
+
+# --------------------------------------------------------------------------- #
+# Penny / sub-penny board
+# --------------------------------------------------------------------------- #
+PENNY_UNIVERSE = [
+    "SNDL", "NAK", "LCID", "PLUG", "AMC", "KOSS", "QS", "OPEN", "MVIS",
+]
+
+
+def penny_board_payload(tickers: list[str] | None = None, rvol_min: float = 1.5) -> dict:
+    """Card data for the dashboard: price, move, RVOL, breakout state, risk flags.
+
+    Everything here is daily-bar based, so it describes end-of-day posture rather
+    than an intraday trigger. ``signal`` is deliberately conservative: a card can
+    be flagged as a breakout only when volume AND trend agree.
+    """
+    import numpy as _np
+
+    from ..subpenny import moving_average_state, relative_volume
+
+    syms = [t.upper() for t in (tickers or PENNY_UNIVERSE)]
+    try:
+        prices = load_prices(syms, period="6mo", allow_synthetic=False,
+                             cache_root=".volcast/cache")
+    except Exception as exc:
+        return _clean({"as_of": None, "cards": [], "error": f"{type(exc).__name__}: {exc}"})
+
+    if prices is None or prices.empty:
+        return _clean({"as_of": None, "cards": [], "error": "no price data"})
+
+    volumes = None
+    try:
+        import yfinance as yf
+
+        raw = yf.download(syms, period="6mo", progress=False, threads=False,
+                          auto_adjust=True)
+        if isinstance(raw.columns, pd.MultiIndex) and "Volume" in raw.columns.get_level_values(0):
+            volumes = raw["Volume"].reindex(columns=prices.columns)
+    except Exception:
+        volumes = None
+
+    ma = moving_average_state(prices)
+    rvol = relative_volume(volumes) if volumes is not None else None
+
+    cards = []
+    for t in prices.columns:
+        s = prices[t].dropna()
+        if len(s) < 25:
+            continue
+
+        last = float(s.iloc[-1])
+        prev = float(s.iloc[-2])
+        chg = (last / prev - 1.0) if prev > 0 else None
+
+        hi = float(s.tail(60).max())
+        from_hi = (last / hi - 1.0) if hi > 0 else None
+
+        r = None
+        if rvol is not None and t in rvol.index and _np.isfinite(rvol.get(t, _np.nan)):
+            r = float(rvol[t])
+
+        ma20 = ma.loc[t, "ma20_pos"] if t in ma.index else None
+        slope = ma.loc[t, "ma20_slope"] if t in ma.index else None
+        cross = bool(ma.loc[t, "ma_cross"]) if t in ma.index else False
+
+        # Conservative signal: needs volume AND trend agreement.
+        hot_vol = r is not None and r >= rvol_min
+        trending = ma20 is not None and ma20 > 0 and slope is not None and slope > 0
+        if hot_vol and trending:
+            signal = "breakout"
+        elif trending:
+            signal = "trending"
+        elif hot_vol:
+            signal = "volume_only"
+        else:
+            signal = "quiet"
+
+        flags = []
+        if last < 1.0:
+            flags.append("penny")
+        if last < 0.001:
+            flags.append("sub_penny")
+        if len(s) < 120:
+            flags.append("short_history")
+        if from_hi is not None and from_hi < -0.5:
+            flags.append("down_50_from_high")
+
+        # 0-100 composite for the card's headline number.
+        score = 50.0
+        if r is not None:
+            score += min(max((r - 1.0) * 12.0, -25.0), 30.0)
+        if ma20 is not None:
+            score += min(max(ma20 * 0.30, -20.0), 20.0)
+        if cross:
+            score += 8.0
+        if "down_50_from_high" in flags:
+            score -= 10.0
+        score = float(min(max(score, 0.0), 100.0))
+
+        cards.append(
+            {
+                "ticker": t,
+                "last": last,
+                "change_1d": chg,
+                "rvol": r,
+                "ma20_pos": float(ma20) if ma20 is not None else None,
+                "ma20_slope": float(slope) if slope is not None else None,
+                "cross": cross,
+                "from_high": from_hi,
+                "signal": signal,
+                "score": score,
+                "flags": flags,
+                "spark": [float(v) for v in s.tail(40).to_numpy()],
+            }
+        )
+
+    cards.sort(key=lambda c: c["score"], reverse=True)
+    return _clean(
+        {
+            "as_of": prices.index[-1].isoformat(),
+            "rvol_min": rvol_min,
+            "cards": cards,
+            "note": (
+                "Daily-bar posture, not an intraday trigger. 'breakout' requires "
+                "unusual volume AND a rising MA20; it is a shortlist, not a signal "
+                "to buy. Measured follow-through on this pattern was negative."
+            ),
+        }
+    )

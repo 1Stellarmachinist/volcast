@@ -103,3 +103,23 @@ def quotes(tickers: str | None = None):
 @router.get("/universe")
 def universe():
     return clean_payload({"default": list(DEFAULT_UNIVERSE), "count": len(DEFAULT_UNIVERSE)})
+
+
+@router.get("/penny")
+def penny(
+    tickers: str | None = None,
+    rvol_min: float = Query(default=1.5, ge=1.0, le=20.0),
+):
+    """Card feed for the penny-stock dashboard."""
+    from .service import penny_board_payload
+
+    return clean_payload(
+        penny_board_payload(_tickers_optional(tickers), rvol_min=rvol_min)
+    )
+
+
+def _tickers_optional(tickers: str | None) -> list[str] | None:
+    if not tickers:
+        return None
+    out = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    return out or None

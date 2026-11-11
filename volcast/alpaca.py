@@ -40,6 +40,59 @@ PAPER_HOST = "https://paper-api.alpaca.markets"
 SIP_EMBARGO = dt.timedelta(minutes=15)
 
 
+def load_dotenv(path: str | os.PathLike[str] | None = None,
+                override: bool = False) -> int:
+    """Read ``.env`` into os.environ. Returns how many variables were set.
+
+    Deliberately dependency-free: adding python-dotenv for six lines of parsing
+    would be a poor trade, and the file format here is trivial.
+
+    Called automatically by ``Credentials.from_env`` so a key pasted into .env
+    actually works -- without this the file was inert and every command reported
+    "credentials are not set" no matter what the user did.
+    """
+    if path is None:
+        # Look next to the package (project root) then the CWD.
+        candidates = [
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+            os.path.join(os.getcwd(), ".env"),
+        ]
+        target = next((c for c in candidates if os.path.isfile(c)), None)
+        if target is None:
+            return 0
+        path = target
+
+    p = os.fspath(path)
+    if not os.path.isfile(p):
+        return 0
+
+    count = 0
+    try:
+        with open(p, encoding="utf-8-sig") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.lower().startswith("export "):
+                    line = line[7:].strip()
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                # Strip a single layer of matching quotes.
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                    value = value[1:-1]
+                if not key:
+                    continue
+                if override or key not in os.environ:
+                    os.environ[key] = value
+                    count += 1
+    except OSError:
+        return count
+    return count
+
+
 class AlpacaError(RuntimeError):
     """Raised for auth/plan/parameter problems, with the server message intact."""
 
@@ -51,6 +104,9 @@ class Credentials:
 
     @classmethod
     def from_env(cls) -> Credentials:
+        # .env is loaded here rather than at import time so tests can control the
+        # environment without a stray file overriding their monkeypatching.
+        load_dotenv()
         kid = os.environ.get("ALPACA_API_KEY_ID", "").strip()
         sec = os.environ.get("ALPACA_API_SECRET_KEY", "").strip()
         if not kid or not sec:

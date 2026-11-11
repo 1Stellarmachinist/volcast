@@ -68,7 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
     a = sub.add_parser("alpaca", help="measure real spreads via Alpaca (needs API keys)")
     _args.add_common(a)
     a.add_argument("--top", type=int, default=None)
-    a.add_argument("--days", type=int, default=60, help="days of daily bars to fetch")
+    a.add_argument("--days", type=int, default=400,
+                   help="trading days of history (ranking needs >=200)")
     a.add_argument("--universe", action="store_true", help="check symbols against Alpaca tradable list")
     a.set_defaults(func=_args.dispatch, handler="alpaca")
 

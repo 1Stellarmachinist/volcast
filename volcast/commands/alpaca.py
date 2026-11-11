@@ -27,7 +27,7 @@ def run(args) -> int:
         return 2
 
     cfg = resolve_config(args)
-    lookback_days = getattr(args, "days", 60) or 60
+    lookback_days = getattr(args, "days", 400) or 400
     tickers = list(cfg.universe)
 
     print("checking credentials...")
@@ -45,7 +45,10 @@ def run(args) -> int:
             print(f"  warning: not in Alpaca's tradable list: {missing}")
 
     end = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=20)  # stay inside SIP embargo
-    start = end - dt.timedelta(days=lookback_days * 2)
+    # Calendar days -> trading days is roughly 5/7, so ask for 2.6x to be safe.
+    # The old 2x factor returned 85 bars for a "60 day" request and then the
+    # ranking stage rejected them for having too little history.
+    start = end - dt.timedelta(days=int(lookback_days * 2.6) + 30)
 
     print(f"\nfetching {lookback_days}d of daily bars...")
     try:
