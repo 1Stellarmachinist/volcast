@@ -772,8 +772,20 @@ def check_passkey_requirements() -> str:
             assert auth["public_key"].get("allowCredentials") == [], \
                 "usernameless login must send allowCredentials=[]"
 
-            # add_to_existing must not fork the account
+            # add_to_existing must not fork the account.
+            # NOTE: begin_registration no longer writes a user row (that caused
+            # orphan accounts when users cancelled the ceremony), so the owner has
+            # to exist first. This also asserts the new deferred-creation rule.
             uid = reg["user_id"]
+            assert dbmod.get(conn, "SELECT 1 FROM passkey_users WHERE id=?", (uid,)) is None, \
+                "begin_registration created a user row before the passkey verified"
+
+            conn.execute(
+                "INSERT INTO passkey_users (id, username, display_name, created_at)"
+                " VALUES (?,?,?,?)",
+                (uid, "owner", "Owner", dbmod.now()),
+            )
+            conn.commit()
             reg2 = passkeys.begin_registration(cfg, conn, None, None, uid)
             assert reg2["user_id"] == uid, "add_to_existing created a different user"
             n = dbmod.get(conn, "SELECT COUNT(*) AS n FROM passkey_users")["n"]

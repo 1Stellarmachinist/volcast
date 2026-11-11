@@ -141,6 +141,7 @@ def begin_registration(cfg: Settings, conn, username: str | None,
         user_id = row["id"]
         uname = row["username"]
         dname = display_name or row["display_name"] or uname
+        pending = False
     else:
         if username:
             existing = dbmod.get(
@@ -151,10 +152,17 @@ def begin_registration(cfg: Settings, conn, username: str | None,
                 user_id = existing["id"]
                 uname = existing["username"]
                 dname = existing["display_name"] or username
+                pending = False
             else:
                 user_id = "usr_" + uuid.uuid4().hex
                 uname = username
                 dname = display_name or username
+                # NOTE: a NEW account is deliberately NOT inserted here. Committing
+                # the row before the authenticator confirms leaves an orphan every
+                # time the user cancels the browser ceremony -- which is exactly how
+                # nine credential-less accounts accumulated. The row is created in
+                # finish_registration(), after the attestation verifies.
+                pending = True
         else:
             # Usernameless: mint an opaque, non-guessable handle.
             user_id = "usr_" + uuid.uuid4().hex
@@ -164,12 +172,7 @@ def begin_registration(cfg: Settings, conn, username: str | None,
             ).fetchone():
                 uname = "user-" + secrets.token_hex(8)
             dname = display_name or uname
-
-        conn.execute(
-            "INSERT OR IGNORE INTO passkey_users (id, username, display_name, created_at)"
-            " VALUES (?,?,?,?)",
-            (user_id, uname, dname, dbmod.now()),
-        )
+            pending = True
 
     rp_id, rp_name, _origins = resolve_rp(cfg, request)
 
@@ -243,6 +246,9 @@ def begin_registration(cfg: Settings, conn, username: str | None,
         {
             "challenge": bytes_to_base64url(challenge),
             "user_id": user_id,
+            "pending": bool(pending),
+            "username": uname,
+            "display_name": dname,
             "exclude": [bytes_to_base64url(unb64url(r["id"])) for r in dbmod.all_rows(
                 conn, "SELECT id FROM credentials WHERE user_id=?", (user_id,))],
         },
@@ -278,6 +284,20 @@ def finish_registration(cfg: Settings, conn, challenge_id: str,
     cred_id = bytes_to_base64url(verification.credential_id)
     transports = credential.get("response", {}).get("transports") or credential.get("transports") or []
     backed_up = bool(getattr(verification, "credential_backed_up", False))
+
+    # The passkey verified, so NOW it is safe to materialise the account. Deferring
+    # this is what prevents orphan rows when a user cancels the ceremony.
+    if state.get("pending"):
+        conn.execute(
+            "INSERT OR IGNORE INTO passkey_users (id, username, display_name, created_at)"
+            " VALUES (?,?,?,?)",
+            (
+                user_id,
+                state.get("username") or user_id,
+                state.get("display_name") or user_id,
+                dbmod.now(),
+            ),
+        )
 
     conn.execute(
         "INSERT OR REPLACE INTO credentials"
